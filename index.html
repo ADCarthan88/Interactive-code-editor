@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Code Editor</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="editor-container" id="editor-container">
+        <!-- Header -->
+        <header class="editor-header">
+            <div class="header-left">
+                <h1 class="editor-title">Code Editor</h1>
+                <div class="file-info">
+                    <span id="file-name">untitled</span>
+                    <span id="file-status" class="file-status"></span>
+                </div>
+            </div>
+            <div class="header-right">
+                <button id="theme-toggle" class="icon-btn" title="Toggle Theme">🌙</button>
+                <button id="fullscreen-btn" class="icon-btn" title="Fullscreen">⛶</button>
+            </div>
+        </header>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-left">
+                <select id="language-select" class="language-select">
+                    <option value="javascript">JavaScript</option>
+                    <option value="typescript">TypeScript</option>
+                    <option value="html">HTML</option>
+                    <option value="css">CSS</option>
+                    <option value="python">Python</option>
+                    <option value="java">Java</option>
+                    <option value="cpp">C++</option>
+                    <option value="json">JSON</option>
+                    <option value="markdown">Markdown</option>
+                </select>
+                
+                <div class="toolbar-divider"></div>
+                
+                <button id="new-btn" class="toolbar-btn" title="New File">
+                    <span class="btn-icon">📄</span>
+                    New
+                </button>
+                <button id="open-btn" class="toolbar-btn" title="Open File">
+                    <span class="btn-icon">📁</span>
+                    Open
+                </button>
+                <button id="save-btn" class="toolbar-btn" title="Save File">
+                    <span class="btn-icon">💾</span>
+                    Save
+                </button>
+            </div>
+            
+            <div class="toolbar-right">
+                <button id="format-btn" class="toolbar-btn" title="Format Code">
+                    <span class="btn-icon">✨</span>
+                    Format
+                </button>
+                <button id="run-btn" class="toolbar-btn primary" title="Run Code">
+                    <span class="btn-icon">▶️</span>
+                    Run
+                </button>
+                <button id="clear-btn" class="toolbar-btn" title="Clear Output">
+                    <span class="btn-icon">🗑️</span>
+                    Clear
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Editor Layout -->
+        <div class="editor-layout">
+            <!-- Left Panel - Code Editor -->
+            <div class="editor-panel">
+                <div class="editor-tabs">
+                    <div class="tab active" data-file="untitled">
+                        <span class="tab-name">untitled</span>
+                        <button class="tab-close" title="Close">×</button>
+                    </div>
+                    <button class="add-tab" title="New Tab">+</button>
+                </div>
+                
+                <div class="code-editor-container">
+                    <div class="editor-gutter">
+                        <div class="line-numbers" id="line-numbers">1</div>
+                    </div>
+                    <div class="editor-content">
+                        <textarea 
+                            id="code-editor" 
+                            class="code-editor"
+                            placeholder="// Start coding here..."
+                            spellcheck="false"
+                            autocomplete="off"
+                            autocorrect="off"
+                            autocapitalize="off"
+                        ></textarea>
+                    </div>
+                </div>
+                
+                <!-- Status Bar -->
+                <div class="status-bar">
+                    <div class="status-left">
+                        <span id="cursor-position">Ln 1, Col 1</span>
+                        <span class="status-divider">|</span>
+                        <span id="selection-info"></span>
+                        <span class="status-divider">|</span>
+                        <span id="char-count">0 characters</span>
+                    </div>
+                    <div class="status-right">
+                        <span id="encoding">UTF-8</span>
+                        <span class="status-divider">|</span>
+                        <span id="line-ending">LF</span>
+                        <span class="status-divider">|</span>
+                        <span id="language-indicator">JavaScript</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Resizer -->
+            <div class="resizer" id="resizer"></div>
+
+            <!-- Right Panel - Output -->
+            <div class="output-panel">
+                <div class="output-tabs">
+                    <button class="output-tab active" data-tab="console">Console</button>
+                    <button class="output-tab" data-tab="preview">Preview</button>
+                    <button class="output-tab" data-tab="problems">Problems</button>
+                </div>
+                
+                <div class="output-content">
+                    <!-- Console Tab -->
+                    <div class="output-section active" id="console-output">
+                        <div class="console-header">
+                            <span class="console-title">Console Output</span>
+                            <div class="console-controls">
+                                <button id="clear-console" class="console-btn" title="Clear Console">🗑️</button>
+                                <button id="scroll-lock" class="console-btn" title="Auto Scroll">📜</button>
+                            </div>
+                        </div>
+                        <div id="console-content" class="console-content"></div>
+                    </div>
+                    
+                    <!-- Preview Tab -->
+                    <div class="output-section" id="preview-output">
+                        <div class="preview-header">
+                            <span class="preview-title">Live Preview</span>
+                            <div class="preview-controls">
+                                <button id="refresh-preview" class="console-btn" title="Refresh">🔄</button>
+                                <button id="open-preview" class="console-btn" title="Open in New Window">🔗</button>
+                            </div>
+                        </div>
+                        <iframe id="preview-frame" class="preview-frame" sandbox="allow-scripts allow-same-origin"></iframe>
+                    </div>
+                    
+                    <!-- Problems Tab -->
+                    <div class="output-section" id="problems-output">
+                        <div class="problems-header">
+                            <span class="problems-title">Problems</span>
+                            <span id="problems-count" class="problems-count">0 problems</span>
+                        </div>
+                        <div id="problems-content" class="problems-content"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden File Input -->
+    <input type="file" id="file-input" accept=".js,.ts,.html,.css,.py,.java,.cpp,.json,.md,.txt" style="display: none;">
+    
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">Processing...</div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu" style="display: none;">
+        <div class="context-item" data-action="cut">Cut</div>
+        <div class="context-item" data-action="copy">Copy</div>
+        <div class="context-item" data-action="paste">Paste</div>
+        <div class="context-divider"></div>
+        <div class="context-item" data-action="select-all">Select All</div>
+        <div class="context-item" data-action="find">Find</div>
+        <div class="context-item" data-action="replace">Replace</div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="js/editor.js"></script>
+    <script>
+        // Initialize editor when DOM is loaded
+        document.addEventListener('DOMContentLoaded', () => {
+            window.codeEditor = new CodeEditor();
+        });
+        
+        // Handle keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey || e.metaKey) {
+                switch(e.key) {
+                    case 's':
+                        e.preventDefault();
+                        document.getElementById('save-btn').click();
+                        break;
+                    case 'o':
+                        e.preventDefault();
+                        document.getElementById('open-btn').click();
+                        break;
+                    case 'n':
+                        e.preventDefault();
+                        document.getElementById('new-btn').click();
+                        break;
+                    case 'Enter':
+                        e.preventDefault();
+                        document.getElementById('run-btn').click();
+                        break;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
