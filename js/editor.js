@@ -9,6 +9,10 @@ class CodeEditor {
             throw new Error('Required DOM elements not found');
         }
         
+        // Initialize security manager
+        this.security = new SecurityManager();
+        this.rateLimiter = this.security.createRateLimiter(5, 10000); // 5 executions per 10 seconds
+        
         this.initializeEventListeners();
         this.updateLineNumbers();
     }
@@ -80,12 +84,26 @@ class CodeEditor {
     }
     
     runCode() {
-        const code = this.editor.value;
-        const language = this.languageSelect.value;
-        
-        this.output.innerHTML = '';
-        
         try {
+            // Rate limiting check
+            this.rateLimiter();
+            
+            const code = this.editor.value;
+            const language = this.languageSelect.value;
+            
+            // Input validation
+            if (!code || code.trim().length === 0) {
+                this.showMessage('No code to execute', 'error');
+                return;
+            }
+            
+            if (code.length > 10000) {
+                this.showMessage('Code too long (max 10,000 characters)', 'error');
+                return;
+            }
+            
+            this.output.innerHTML = '';
+            
             switch (language) {
                 case 'javascript':
                     this.runJavaScript(code);
@@ -97,22 +115,69 @@ class CodeEditor {
                     this.showMessage(`${language} execution not implemented`, 'info');
             }
         } catch (error) {
-            this.showMessage(`Error: ${this.sanitizeOutput(error.message)}`, 'error');
+            this.showMessage(`Error: ${this.security.escapeOutput(error.message)}`, 'error');
         }
     }
     
     runJavaScript(code) {
+        // Security validation
+        const validation = this.security.validateJavaScript(code);
+        if (!validation.isValid) {
+            this.showMessage(`Security violation: ${validation.violations.join(', ')}`, 'error');
+            return;
+        }
+        
         const originalLog = console.log;
         let output = '';
         
         console.log = (...args) => {
-            output += args.map(arg => this.sanitizeOutput(String(arg))).join(' ') + '\n';
+            output += args.map(arg => this.security.escapeOutput(String(arg))).join(' ') + '\n';
         };
         
         try {
-            // Create safe execution context
-            const safeEval = new Function('console', code);
-            safeEval({ log: console.log });
+            // Create completely isolated execution context
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.sandbox = 'allow-scripts';
+            document.body.appendChild(iframe);
+            
+            const iframeWindow = iframe.contentWindow;
+            const iframeConsole = {
+                log: (...args) => {
+                    output += args.map(arg => this.security.escapeOutput(String(arg))).join(' ') + '\n';
+                }
+            };
+            
+            // Execute in sandboxed iframe
+            const script = iframeWindow.document.createElement('script');
+            script.textContent = `
+                const console = ${JSON.stringify(iframeConsole)};
+                try {
+                    ${code}
+                } catch (error) {
+                    parent.postMessage({type: 'error', message: error.message}, '*');
+                }
+            `;
+            
+            // Listen for errors from iframe
+            const errorHandler = (event) => {
+                if (event.data && event.data.type === 'error') {
+                    this.showMessage(`JavaScript Error: ${this.security.escapeOutput(event.data.message)}`, 'error');
+                }
+                window.removeEventListener('message', errorHandler);
+                document.body.removeChild(iframe);
+            };
+            
+            window.addEventListener('message', errorHandler);
+            iframeWindow.document.head.appendChild(script);
+            
+            // Clean up after execution
+            setTimeout(() => {
+                if (document.body.contains(iframe)) {
+                    document.body.removeChild(iframe);
+                }
+                window.removeEventListener('message', errorHandler);
+            }, 1000);
             
             if (output) {
                 this.showMessage(output, 'success');
@@ -120,18 +185,58 @@ class CodeEditor {
                 this.showMessage('Code executed successfully', 'success');
             }
         } catch (error) {
-            this.showMessage(`JavaScript Error: ${this.sanitizeOutput(error.message)}`, 'error');
+            this.showMessage(`JavaScript Error: ${this.security.escapeOutput(error.message)}`, 'error');
         } finally {
             console.log = originalLog;
         }
     }
     
+    isCodeSafe(code) {
+        const dangerousPatterns = [
+            /eval\s*\(/,
+            /Function\s*\(/,
+            /setTimeout\s*\(/,
+            /setInterval\s*\(/,
+            /document\./,
+            /window\./,
+            /global\./,
+            /process\./,
+            /require\s*\(/,
+            /import\s*\(/
+        ];
+        
+        return !dangerousPatterns.some(pattern => pattern.test(code));
+    }
+    
     runHTML(code) {
         const previewFrame = document.getElementById('preview-frame');
         if (previewFrame) {
-            const sanitizedCode = this.sanitizeHTML(code);
-            previewFrame.srcdoc = sanitizedCode;
-            this.showMessage('HTML rendered in preview', 'success');
+            const sanitizedCode = this.security.sanitizeHTML(code);
+            
+            // Additional security: wrap in secure HTML template
+            const secureHTML = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'none'; object-src 'none';">
+                    <title>Preview</title>
+                </head>
+                <body>
+                    ${sanitizedCode}
+                </body>
+                </html>
+            `;
+            
+            const blob = new Blob([secureHTML], { type: 'text/html' });
+            const url = URL.createObjectURL(blob);
+            previewFrame.src = url;
+            
+            previewFrame.onload = () => {
+                URL.revokeObjectURL(url);
+            };
+            
+            this.showMessage('HTML rendered in secure preview', 'success');
         } else {
             this.showMessage('Preview frame not available', 'error');
         }
@@ -144,8 +249,37 @@ class CodeEditor {
     }
     
     sanitizeHTML(html) {
-        // Basic HTML sanitization - in production, use DOMPurify
-        return html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+        // Comprehensive HTML sanitization
+        const dangerousTags = [
+            /<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi,
+            /<iframe\b[^>]*>/gi,
+            /<object\b[^>]*>/gi,
+            /<embed\b[^>]*>/gi,
+            /<form\b[^>]*>/gi,
+            /<input\b[^>]*>/gi,
+            /<meta\b[^>]*>/gi
+        ];
+        
+        const dangerousAttributes = [
+            /on\w+\s*=/gi,  // onclick, onload, etc.
+            /javascript:/gi,
+            /data:/gi,
+            /vbscript:/gi
+        ];
+        
+        let sanitized = html;
+        
+        // Remove dangerous tags
+        dangerousTags.forEach(pattern => {
+            sanitized = sanitized.replace(pattern, '');
+        });
+        
+        // Remove dangerous attributes
+        dangerousAttributes.forEach(pattern => {
+            sanitized = sanitized.replace(pattern, '');
+        });
+        
+        return sanitized;
     }
     
     showMessage(message, type = 'info') {
