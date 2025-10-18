@@ -1,39 +1,40 @@
 class CodeEditor {
     constructor() {
         this.editor = document.getElementById('code-editor');
-        this.output = document.getElementById('output');
+        this.output = document.getElementById('console-content');
         this.lineNumbers = document.getElementById('line-numbers');
         this.languageSelect = document.getElementById('language-select');
-
-        this.initializeEventListners();
+        
+        if (!this.editor || !this.output || !this.lineNumbers || !this.languageSelect) {
+            throw new Error('Required DOM elements not found');
+        }
+        
+        this.initializeEventListeners();
         this.updateLineNumbers();
     }
-    intializeEventListners() {
-        // Update line numbers on input
+    
+    initializeEventListeners() {
         this.editor.addEventListener('input', () => {
             this.updateLineNumbers();
+            this.updateCursorPosition();
         });
-
-        // Handle scroll sync
+        
         this.editor.addEventListener('scroll', () => {
             this.lineNumbers.scrollTop = this.editor.scrollTop;
         });
-
-        // Run code button
-        document.getElementById('run-btn').addEventListener('click', () => {
+        
+        document.getElementById('run-btn')?.addEventListener('click', () => {
             this.runCode();
         });
-    
-        // Clear button
-        document.getElementById('clear-btn').addEventListener('click', () => {
-            this.clearOutput();
+        
+        document.getElementById('clear-btn')?.addEventListener('click', () => {
+            this.clearEditor();
         });
-        // Save button
-        document.getElementById('save-btn').addEventListener('click', () => {
+        
+        document.getElementById('save-btn')?.addEventListener('click', () => {
             this.saveCode();
         });
-
-        // Tab key support
+        
         this.editor.addEventListener('keydown', (e) => {
             if (e.key === 'Tab') {
                 e.preventDefault();
@@ -41,33 +42,49 @@ class CodeEditor {
             }
         });
     }
-
+    
     updateLineNumbers() {
-        const lines = this.editor.ariaValueMax.split('\n');
+        const lines = this.editor.value.split('\n');
         const lineCount = lines.length;
-
+        
         let lineNumbersHtml = '';
         for (let i = 1; i <= lineCount; i++) {
             lineNumbersHtml += i + '\n';
         }
+        
         this.lineNumbers.textContent = lineNumbersHtml;
     }
+    
+    updateCursorPosition() {
+        const cursorPos = this.editor.selectionStart;
+        const textBeforeCursor = this.editor.value.substring(0, cursorPos);
+        const lines = textBeforeCursor.split('\n');
+        const line = lines.length;
+        const col = lines[lines.length - 1].length + 1;
+        
+        const posElement = document.getElementById('cursor-position');
+        if (posElement) {
+            posElement.textContent = `Ln ${line}, Col ${col}`;
+        }
+    }
+    
     insertTab() {
         const start = this.editor.selectionStart;
-        const end = this.aditor.selectionEnd;
-
-        this.editor.value = this.editor.value.substring(0, start) +
-                          '     ' +
-                          this.editor.value.substring(end);
+        const end = this.editor.selectionEnd;
+        
+        this.editor.value = this.editor.value.substring(0, start) + 
+                           '    ' + 
+                           this.editor.value.substring(end);
+        
         this.editor.selectionStart = this.editor.selectionEnd = start + 4;
     }
-
+    
     runCode() {
         const code = this.editor.value;
-        const language = this.languageSelect.values;
-
+        const language = this.languageSelect.value;
+        
         this.output.innerHTML = '';
-
+        
         try {
             switch (language) {
                 case 'javascript':
@@ -76,98 +93,115 @@ class CodeEditor {
                 case 'html':
                     this.runHTML(code);
                     break;
-                case 'css':
-                    this.showMessage('CSS preview not implemented in this demo', 'error');
-                    break;
-                case 'python':
-                    this.showMessage('Python execution requires server-side impolementation', 'error');
-                    break;
                 default:
-                    this.showMessage('Language not supported', 'error');
+                    this.showMessage(`${language} execution not implemented`, 'info');
             }
         } catch (error) {
-            this.showMessage(`Error: ${error.message}`, 'error');
-        }
-
-        runJavaScript(code) {
-            // Capture console.log output
-            const originalLog = console.log;
-            let output = '';
-
-            console.log = (...args) => {
-                output += args.joing(' ') + '\n';
-            };
-
-            try {
-                // Execute the code
-                eval(code);
-
-                if (output) {
-                    this.showMessage(output, 'success');
-                } else {
-                    this.showMessage('Code executed successfully (no output)', 'success');
-                }
-            } catch (error) {
-                this.showMessage(`JavaScript Error: ${error.message}`, 'error');
-            } finally {
-                //Restore original console.log
-                console.log = originalLog;
-            }
-        }
-
-        runHTML(code) {
-            // Create a new window to display HTML
-            const newWindow = window.open('', '_blank');
-            newWindow.document.write(code);
-            newWindow.document.close();
-
-            this.showMessage('HTML opened in new window', 'success');
-        }
-
-        showMessage(message, type = 'success') {
-            const messageElement = document.createElement('div');
-            messageElement.className = type;
-            messageElement.textContent = message;
-            this.output.appendChild(messageElement);
-        }
-
-        clearEditor() {
-            this.edditor.value = '';
-            this.output.innerHTML = '';
-            this.updateLineNumbers();
-        }
-
-        saveCode() {
-            const code = this.editor.value;
-            const language = this.languageSelect.value;
-            const filename = `code.${this.getExtension(language)}`;
-
-            const blob = new Blob([code], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokedObjectURL(url);
-
-            this.showMessage(`File saved as ${filename}`, 'success');
-        }
-
-        getFileExtension(language) {
-            const extensions = {
-                'javascript': 'js',
-                'html': 'html',
-                'css': 'css',
-                'python': 'py'
-            };
-            return extensions[language] || 'txt';
+            this.showMessage(`Error: ${this.sanitizeOutput(error.message)}`, 'error');
         }
     }
+    
+    runJavaScript(code) {
+        const originalLog = console.log;
+        let output = '';
+        
+        console.log = (...args) => {
+            output += args.map(arg => this.sanitizeOutput(String(arg))).join(' ') + '\n';
+        };
+        
+        try {
+            // Create safe execution context
+            const safeEval = new Function('console', code);
+            safeEval({ log: console.log });
+            
+            if (output) {
+                this.showMessage(output, 'success');
+            } else {
+                this.showMessage('Code executed successfully', 'success');
+            }
+        } catch (error) {
+            this.showMessage(`JavaScript Error: ${this.sanitizeOutput(error.message)}`, 'error');
+        } finally {
+            console.log = originalLog;
+        }
+    }
+    
+    runHTML(code) {
+        const previewFrame = document.getElementById('preview-frame');
+        if (previewFrame) {
+            const sanitizedCode = this.sanitizeHTML(code);
+            previewFrame.srcdoc = sanitizedCode;
+            this.showMessage('HTML rendered in preview', 'success');
+        } else {
+            this.showMessage('Preview frame not available', 'error');
+        }
+    }
+    
+    sanitizeOutput(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    sanitizeHTML(html) {
+        // Basic HTML sanitization - in production, use DOMPurify
+        return html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    }
+    
+    showMessage(message, type = 'info') {
+        const messageElement = document.createElement('div');
+        messageElement.className = `console-message ${type}`;
+        messageElement.textContent = message;
+        this.output.appendChild(messageElement);
+        this.output.scrollTop = this.output.scrollHeight;
+    }
+    
+    clearEditor() {
+        this.editor.value = '';
+        this.output.innerHTML = '';
+        this.updateLineNumbers();
+    }
+    
+    saveCode() {
+        const code = this.editor.value;
+        const language = this.languageSelect.value;
+        const filename = `code.${this.getFileExtension(language)}`;
+        
+        const blob = new Blob([code], { type: 'text/plain' });
+        const url = URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        this.showMessage(`File saved as ${filename}`, 'success');
+    }
+    
+    getFileExtension(language) {
+        const extensions = {
+            'javascript': 'js',
+            'typescript': 'ts',
+            'html': 'html',
+            'css': 'css',
+            'python': 'py',
+            'java': 'java',
+            'cpp': 'cpp',
+            'json': 'json',
+            'markdown': 'md'
+        };
+        return extensions[language] || 'txt';
+    }
+}
 
-    // Initialize the editor when the page Loads
-    document.addEventListner('DOMContentLoaded', () => {
-        new CodeEditor();
-    });
+// Initialize editor when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        window.codeEditor = new CodeEditor();
+    } catch (error) {
+        console.error('Failed to initialize code editor:', error);
+    }
+});
